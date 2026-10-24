@@ -1,8 +1,7 @@
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
-import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
-  type P, Path, clamp01, clip, clipX, extrudeZ, inset, inwardNormal, roundedRect, sampleSeg, soften, strip,
+  type P, Path, clamp01, clip, creasedNormals, extrudeZ, inset, inwardNormal, roundedRect, sampleSeg, soften, strip,
   tessellateCaps, xAtY,
 } from './geom'
 import { type Ctx, materials, trimMat } from './parts/context'
@@ -54,8 +53,9 @@ export function outlines(spec: CarSpec) {
 
   const gBase: P = [rearBase, pr.beltRear - sink]
   const gCowl: P = [cowlX, pr.belt - sink]
-  const gTopF: P = [roofF, H]
-  const gTopR: P = [roofR, H]
+  // the windscreen header and the roof's trailing end can sit below the roof's peak
+  const gTopF: P = [roofF, cb.topF ?? H]
+  const gTopR: P = [roofR, cb.topR ?? H]
   const house = new Path(gBase)
     .to(gCowl)
     .to(gTopF, wb.windshield ?? 0.01)
@@ -63,23 +63,41 @@ export function outlines(spec: CarSpec) {
     .to(gBase, wb.rear ?? 0.02)
     .closed()
 
-  // the inset glasshouse, with A- and C-pillars that follow the glass, split at each pillar
+  // The inset glasshouse, with A- and C-pillars that follow the glass, split at each pillar.
+  // The C-pillar is offset along the whole rear curve, so the window's back edge follows it.
   let glass = inset(house, pillar)
-  const widen = (a: P, b: P, extra?: number) => {
+  const widenAlong = (pts: P[], extra?: number) => {
     if (!extra) return
-    const n = inwardNormal(a, b)
-    glass = clip(glass, n, n[0] * a[0] + n[1] * a[1] + pillar + extra)
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [a, b] = [pts[i], pts[i + 1]]
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1e-6) continue
+      const n = inwardNormal(a, b)
+      glass = clip(glass, n, n[0] * a[0] + n[1] * a[1] + pillar + extra)
+    }
   }
-  widen(gCowl, gTopF, cb.aPillar)
-  widen(gTopR, gBase, cb.cPillar)
+  widenAlong([gCowl, gTopF], cb.aPillar)
+  widenAlong(sampleSeg(gTopR, gBase, wb.rear ?? 0.02), cb.cPillar)
+  // or an explicit curved back edge for the last side window, from above the roof to the belt
+  if (cb.quarterEdge) {
+    const [top, bottom, bulge] = cb.quarterEdge
+    const edge = sampleSeg([top, H + 0.1], [bottom, pr.beltRear - 0.1], bulge)
+    for (let i = 0; i < edge.length - 1; i++) {
+      const n = inwardNormal(edge[i], edge[i + 1])
+      glass = clip(glass, n, n[0] * edge[i][0] + n[1] * edge[i][1])
+    }
+  }
   const xAt = (f: number) => cowlX + f * (rearBase - cowlX)
   const [ws, we] = cb.sideWindow ?? [0, 1]
   const stops = [ws, ...(cb.dividers ?? []), we]
+  // pillars may lean: x moves by `lean` per metre of height above the beltline
+  const leanAt = (k: number) => (k > 0 && k < stops.length - 1 ? cb.dividerLean?.[k - 1] ?? 0 : 0)
   const windows: P[][] = []
   for (let k = 0; k < stops.length - 1; k++) {
-    const xHi = xAt(stops[k]) - (k > 0 ? 0.04 : 0)
-    const xLo = xAt(stops[k + 1]) + (k + 1 < stops.length - 1 ? 0.04 : 0)
-    const piece = clipX(clipX(glass, xHi, -1), xLo, 1)
+    const [lf, lr] = [leanAt(k), leanAt(k + 1)]
+    const hi = xAt(stops[k]) - (k > 0 ? 0.04 : 0) - lf * pr.belt
+    const lo = xAt(stops[k + 1]) + (k + 1 < stops.length - 1 ? 0.04 : 0) - lr * pr.belt
+    // keep x − lean·y ≤ hi (behind the front pillar) and ≥ lo (ahead of the rear one)
+    const piece = clip(clip(glass, [-1, lf], -hi), [1, -lr], lo)
     if (piece.length >= 3) windows.push(piece)
   }
 
@@ -121,6 +139,9 @@ export function buildCar(spec: CarSpec): THREE.Group {
   const tailCurve = pr.tailCurve ?? 0.05
   const tuck = pr.tuck ?? 0.035
   const hoodDip = pr.hoodDip ?? 0
+  const dipRamp = pr.hoodDipRamp ?? 0.35
+  const haunch = pr.haunch ?? {}
+  const haunchMax = Math.max(haunch.front ?? 0, haunch.rear ?? 0)
   const cabinW = W * (cb.width ?? 0.94)
   const tumble = cb.tumblehome ?? 0.84
 
@@ -140,12 +161,19 @@ export function buildCar(spec: CarSpec): THREE.Group {
     const tr = clamp01((-hl + taperLen - v.x) / taperLen)
     let zs = 1 - noseTaper * tf * tf - tailTaper * tr * tr
     if (cabin) zs *= 1 - (1 - tumble) * clamp01((v.y - pr.belt) / (H - pr.belt))
-    else zs *= 1 - tuck * clamp01((tuckTop - v.y) / (tuckTop - clearance)) ** 2
+    else {
+      zs *= 1 - tuck * clamp01((tuckTop - v.y) / (tuckTop - clearance)) ** 2
+      // haunches: the body swells over each axle (scaled so the widest point is the car's width)
+      if (haunchMax) {
+        const bell = (ax: number) => Math.exp(-(((v.x - ax) / 0.62) ** 2))
+        zs *= (1 + (haunch.front ?? 0) * bell(fAx) + (haunch.rear ?? 0) * bell(rAx)) / (1 + haunchMax)
+      }
+    }
     v.x += -noseCurve * u * u * tf * tf + tailCurve * u * u * tr * tr
     // fender crowns: the middle of the bonnet sits lower than the wings
     if (hoodDip && !cabin && v.x > cowlX) {
       const across = 1 - THREE.MathUtils.smoothstep(Math.abs(u), 0.28, 0.62)
-      const along = clamp01((v.x - cowlX) / 0.35)
+      const along = clamp01((v.x - cowlX) / dipRamp)
       const top = clamp01((v.y - (pr.noseTop - 0.14)) / 0.14)
       v.y -= hoodDip * across * along * top
     }
@@ -170,7 +198,7 @@ export function buildCar(spec: CarSpec): THREE.Group {
     }
     // Small primitives keep their own normals; extruded panels get smooth, creased shading.
     if (!panel) return g
-    const out = toCreasedNormals(g, Math.PI / 4)
+    const out = creasedNormals(g, Math.PI / 4)
     g.dispose()
     return out
   }
@@ -285,11 +313,14 @@ export function buildCar(spec: CarSpec): THREE.Group {
     for (const s of sides) {
       const z = s * sp * hw
       const y = hlSpec.y
-      // fender-mounted lamps face straight ahead; the rest sit on the nose face
+      const r = hlSpec.size / 2
+      // Fender-mounted lamps face straight ahead, seated where the body's front surface is at
+      // the height of the lamp's lower half, so a rounded nose never hides them. The pod behind
+      // carries the wing up and around the top of the lamp. The rest sit on the nose face.
+      const lampX = frontmost(body, y - r * 0.4) - 0.01
       const place = (g: THREE.BufferGeometry, out: number) =>
-        hlSpec.back !== undefined ? g.translate(hl - hlSpec.back + out, y, z) : onFace(g, true, y, z, out)
+        hlSpec.back !== undefined ? g.translate(lampX + out, y, z) : onFace(g, true, y, z, out)
       if (hlSpec.type === 'round') {
-        const r = hlSpec.size / 2
         if (hlSpec.pod) {
           const len = 0.34
           const pod = new THREE.CylinderGeometry(r * 1.14, r * 1.24, len, 32, 4).rotateZ(Math.PI / 2)
@@ -337,6 +368,15 @@ export function buildCar(spec: CarSpec): THREE.Group {
   if (gr.type === 'chrome') {
     grille(new THREE.BoxGeometry(0.05, gr.h, gw, 1, 1, 8), m.chrome, 0.01)
     grille(new THREE.BoxGeometry(0.05, gr.h - 0.035, gw - 0.035, 1, 1, 8), m.trim, 0.014)
+  }
+  if (gr.type === 'horns') {
+    // the small horn grilles low on each side of the nose; w places them across the car
+    for (const s of sides) {
+      const z = s * (gr.w ?? 0.55) * hw
+      grille(new RoundedBoxGeometry(0.03, gr.h + 0.022, 0.155, 2, 0.02), m.chrome, 0.004, 0, z)
+      grille(new RoundedBoxGeometry(0.03, gr.h, 0.13, 2, 0.015), m.trim, 0.008, 0, z)
+      for (const dy of [-0.25, 0.25]) grille(new THREE.BoxGeometry(0.03, 0.006, 0.12), m.chrome, 0.011, dy * gr.h, z)
+    }
   }
   if (gr.type === 'shield') {
     grille(new THREE.CylinderGeometry(gr.h * 0.6, gr.h * 0.6, 0.05, 3).rotateZ(Math.PI / 2).rotateX(Math.PI / 2), m.chrome, 0.01)
@@ -391,7 +431,8 @@ export function buildCar(spec: CarSpec): THREE.Group {
     const rs = sd.rubStrip
     const x0 = rAx + aR + 0.03
     const x1 = fAx - aR - 0.03
-    const stripMat = rs.color ? new THREE.MeshStandardMaterial({ color: rs.color, roughness: 0.55 }) : m.trim
+    // 'chrome' gives a polished strip, like the 911's rocker trim; any other colour is plastic
+    const stripMat = rs.color === 'chrome' ? m.chrome : rs.color ? new THREE.MeshStandardMaterial({ color: rs.color, roughness: 0.55 }) : m.trim
     for (const s of sides) {
       add(shaped(new THREE.BoxGeometry(x1 - x0, rs.h, 0.03, 24, 1, 1).translate((x0 + x1) / 2, rs.y, s * (hw + 0.004))), stripMat)
       if (rs.pinstripe) {
@@ -423,6 +464,17 @@ export function buildCar(spec: CarSpec): THREE.Group {
   for (const ax of [fAx, rAx]) for (const s of sides) shadow(R * 1.6, tw * 2.2, ax, s * (hw - tw / 2), 0.9)
 
   return group
+}
+
+/** The frontmost point of an outline at height y. */
+function frontmost(pts: P[], y: number): number {
+  let x = -Infinity
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    if ((y - a[1]) * (y - b[1]) <= 0 && a[1] !== b[1]) x = Math.max(x, a[0] + ((y - a[1]) / (b[1] - a[1])) * (b[0] - a[0]))
+  }
+  return x
 }
 
 let blobTex: THREE.Texture | null = null

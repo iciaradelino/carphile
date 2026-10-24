@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { CarSpec } from '../cars/types'
@@ -16,9 +16,27 @@ interface Props {
 
 const mm = (m: number) => `${Math.round(m * 1000).toLocaleString('en-US')} mm`
 
+type View = 'side' | 'top' | 'front' | 'back'
+const VIEWS: View[] = ['side', 'top', 'front', 'back']
+
+/** Where each view puts the camera, as polar angle (from straight up) and azimuth. Side shows the nose to the left. */
+const VIEW_ANGLES: Record<View, { phi: number; theta: number }> = {
+  side: { phi: Math.PI / 2 - 0.06, theta: Math.PI },
+  top: { phi: 0.001, theta: Math.PI },
+  front: { phi: Math.PI / 2 - 0.1, theta: Math.PI / 2 },
+  back: { phi: Math.PI / 2 - 0.1, theta: -Math.PI / 2 },
+}
+
 export function Viewer({ car, visible, spinIn, onReady, onClose, onStep }: Props) {
   const host = useRef<HTMLDivElement>(null)
-  const world = useRef<{ scene: THREE.Scene; renderer: THREE.WebGLRenderer; camera: THREE.Camera; car?: THREE.Group } | null>(null)
+  const world = useRef<{
+    scene: THREE.Scene
+    renderer: THREE.WebGLRenderer
+    camera: THREE.Camera
+    car?: THREE.Group
+    snap: (view: View) => void
+  } | null>(null)
+  const [view, setView] = useState<View | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
 
@@ -30,7 +48,6 @@ export function Viewer({ car, visible, spinIn, onReady, onClose, onStep }: Props
     el.appendChild(renderer.domElement)
     const stage = createStage(renderer)
     const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100)
-    world.current = { scene: stage.scene, renderer, camera }
 
     placeStillCamera(camera, 10.5)
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -39,11 +56,36 @@ export function Viewer({ car, visible, spinIn, onReady, onClose, onStep }: Props
     controls.enablePan = false
     controls.minDistance = 5
     controls.maxDistance = 16
-    controls.minPolarAngle = 0.25
-    controls.maxPolarAngle = 1.48
+    controls.minPolarAngle = 0
+    controls.maxPolarAngle = 1.52
     controls.autoRotate = true
     controls.autoRotateSpeed = 0.6
-    controls.addEventListener('start', () => (controls.autoRotate = false))
+
+    // Snapping to a view: ease the camera along a sphere around the car, keeping the zoom.
+    let tween: { from: THREE.Spherical; to: THREE.Spherical; t0: number } | null = null
+    const snap = (v: View) => {
+      // flush any momentum left from auto-rotation or a drag, so nothing nudges the camera
+      // off the view once the tween hands control back
+      controls.autoRotate = false
+      controls.enableDamping = false
+      controls.update()
+      controls.enableDamping = true
+      const from = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target))
+      const { phi, theta } = VIEW_ANGLES[v]
+      // go the short way round
+      let to = theta
+      while (to - from.theta > Math.PI) to -= Math.PI * 2
+      while (to - from.theta < -Math.PI) to += Math.PI * 2
+      tween = { from, to: new THREE.Spherical(from.radius, phi, to), t0: performance.now() }
+      controls.autoRotate = false
+      setView(v)
+    }
+    controls.addEventListener('start', () => {
+      controls.autoRotate = false
+      tween = null
+      setView(null)
+    })
+    world.current = { scene: stage.scene, renderer, camera, snap }
 
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = el
@@ -79,7 +121,20 @@ export function Viewer({ car, visible, spinIn, onReady, onClose, onStep }: Props
         car.rotation.y += step
         if (spin <= 0.002) car.rotation.y = Math.round(car.rotation.y / (Math.PI * 2)) * Math.PI * 2
       }
-      controls.update()
+      if (tween) {
+        const k = Math.min(1, (now - tween.t0) / 750)
+        const e = k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2 // ease in-out
+        const s = new THREE.Spherical(
+          tween.from.radius,
+          tween.from.phi + (tween.to.phi - tween.from.phi) * e,
+          tween.from.theta + (tween.to.theta - tween.from.theta) * e,
+        )
+        camera.position.setFromSpherical(s).add(controls.target)
+        camera.lookAt(controls.target)
+        if (k === 1) tween = null
+      } else {
+        controls.update()
+      }
       renderer.render(stage.scene, camera)
     })
 
@@ -149,6 +204,13 @@ export function Viewer({ car, visible, spinIn, onReady, onClose, onStep }: Props
           <div><dt>Wheelbase</dt><dd>{mm(d.WB)}</dd></div>
         </dl>
       </section>
+      <div className="viewer-views" role="group" aria-label="View">
+        {VIEWS.map((v) => (
+          <button key={v} className={view === v ? 'is-active' : ''} aria-pressed={view === v} onClick={() => world.current?.snap(v)}>
+            {v}
+          </button>
+        ))}
+      </div>
       <nav className="viewer-nav">
         <button onClick={() => onStep(-1)} aria-label="Previous car">←</button>
         <span>drag to turn</span>

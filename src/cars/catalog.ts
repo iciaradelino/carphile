@@ -93,34 +93,46 @@ export const catalog: CarSpec[] = [
     designer: 'F. A. “Butzi” Porsche',
     note: 'The 911’s body with the 356’s flat-four. Lighter in the nose, sweeter balanced, and outsold its sibling early on.',
     paint: '#e2b240',
-    dims: { L: 4.163, W: 1.61, H: 1.32, WB: 2.211, FO: 0.9, R: 0.3 },
+    dims: { L: 4.163, W: 1.61, H: 1.32, WB: 2.211, FO: 0.87, R: 0.33 },
+    // Fitted to a straight side-on photo of a 1969 car: lengths scaled by the wheelbase,
+    // heights by the overall height.
     profile: {
-      // low nose between tall, upright-lamped wings; one long curve from windscreen to tail
-      clearance: 0.16, noseBottom: 0.32, noseTop: 0.64, noseRake: 0.14, noseUnder: 0.16, hood: 1.45, belt: 0.82, beltRear: 0.8,
-      tailTop: 0.7, tailBottom: 0.34, tailRake: 0.14, bulge: { nose: 0.14, hood: 0.06, deck: 0.06, tail: 0.14 },
-      noseTaper: 0.12, tailTaper: 0.1, taperLen: 0.9, noseCurve: 0.13, tailCurve: 0.1, tuck: 0.05, hoodDip: 0.09,
+      // The bonnet falls away steeply between tall wings that carry upright lamps; the nose
+      // curls down to a low, slim bumper. Behind the doors the body swells into wide hips.
+      clearance: 0.2, noseBottom: 0.42, noseTop: 0.81, noseRake: 0.28, noseUnder: 0.22, hood: 1.53, belt: 0.9, beltRear: 0.86,
+      tailTop: 0.58, tailBottom: 0.34, tailRake: 0.1, tailUnder: 0.18, bulge: { nose: 0.14, hood: 0.015, deck: 0.08, tail: 0.16 },
+      noseTaper: 0.17, tailTaper: 0.16, taperLen: 0.95, noseCurve: 0.22, tailCurve: 0.2, tuck: 0.07, archScale: 1.09,
+      hoodDip: 0.2, hoodDipRamp: 1.53, haunch: { front: 0.025, rear: 0.05 },
     },
     cabin: {
-      windshieldRun: 0.62, roof: 0.5, rearRun: 1.4, bulge: { windshield: 0.03, roof: 0.09, rear: 0.08 },
-      tumblehome: 0.76, width: 0.9, pillar: 0.055, dividers: [0.4], cPillar: 0.22, rearGlass: [0.05, 0.45],
+      // A fairly upright screen with a low header; the roof keeps rising to its peak above the
+      // door, then one rounded curve runs all the way down to the tail.
+      windshieldRun: 0.4, roof: 0.82, rearRun: 0.93, topF: 1.22, topR: 1.22,
+      bulge: { windshield: 0.03, roof: 0.244, rear: 0.15 },
+      tumblehome: 0.74, width: 0.88, pillar: 0.06,
+      // quarter vent and B-pillar, both leaning back; the quarter window ends in a steep arc
+      dividers: [0.184, 0.473], dividerLean: [-0.33, -0.19], quarterEdge: [-0.8, -1.07, 0.2], rearGlass: [0.04, 0.45],
     },
     front: {
-      headlights: { type: 'round', y: 0.63, size: 0.175, spread: [0.66], back: 0.3, pod: true },
-      grille: { type: 'none', y: 0.4, h: 0.05 },
-      bumper: { style: 'chrome', y: 0.37, h: 0.06, d: 0.06, span: 0.9 },
-      indicators: { y: 0.45, w: 0.1, h: 0.045, spread: [0.62] },
+      headlights: { type: 'round', y: 0.68, size: 0.18, spread: [0.64], back: 0, pod: true },
+      grille: { type: 'horns', y: 0.55, h: 0.04, w: 0.36 },
+      bumper: { style: 'chrome', y: 0.41, h: 0.065, d: 0.07, span: 0.92, strip: true, overriders: [0.36] },
+      indicators: { y: 0.5, w: 0.11, h: 0.045, spread: [0.68] },
     },
     rear: {
-      taillights: { type: 'rect', y: 0.6, w: 0.17, h: 0.08, spread: [0.7], split: 'cols', bezel: 'chrome', segments: [['amber', 0.4], ['red', 0.6]] },
-      bumper: { style: 'chrome', y: 0.4, h: 0.06, d: 0.06, span: 0.9, strip: true, overriders: [0.42] },
-      lid: { type: 'engine', bottom: 0.63 },
-      plate: { y: 0.5, text: 'S-PK 912', style: 'de' },
-      badges: [{ text: 'PORSCHE', y: 0.665, z: 0, h: 0.032, font: 'wide' }, { text: '912', y: 0.6, z: 0.36, h: 0.03 }],
+      taillights: { type: 'rect', y: 0.53, w: 0.2, h: 0.07, spread: [0.68], split: 'cols', bezel: 'chrome', segments: [['amber', 0.4], ['red', 0.6]] },
+      bumper: { style: 'chrome', y: 0.42, h: 0.065, d: 0.07, span: 0.92, strip: true, overriders: [0.4] },
+      lid: { type: 'engine', bottom: 0.56 },
+      plate: { y: 0.505, text: 'S-PK 912', style: 'de' },
+      badges: [{ text: '912', y: 0.505, z: 0.5, h: 0.03 }],
       exhaust: { z: -0.42, r: 0.03 },
     },
-    side: { seams: [0.01, 0.43], mirrors: 'chrome', handles: 'chrome', windowTrim: 'chrome' },
+    side: {
+      seams: [-0.067, 0.473], mirrors: 'chrome', handles: 'chrome', windowTrim: 'chrome',
+      rubStrip: { y: 0.28, h: 0.018, color: 'chrome' },
+    },
     interior: { color: '#2b2522', seats: 2 },
-    wheels: { style: 'cap', rim: '#e2b240' },
+    wheels: { style: 'fuchs', rim: '#d9dadb' },
   },
   {
     id: 'vw-golf-1',

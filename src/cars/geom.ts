@@ -1,6 +1,4 @@
 import * as THREE from 'three'
-import { TessellateModifier } from 'three/examples/jsm/modifiers/TessellateModifier.js'
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 // 2D outline helpers (side-view silhouettes, counter-clockwise) and geometry utilities shared by
 // the car builder and its detail parts.
@@ -166,30 +164,95 @@ export function extrudeZ(pts: P[], z0: number, z1: number, bevel = 0, steps = 1)
 /**
  * ExtrudeGeometry's flat caps (group 0) are long slivers fanned across the outline; give them
  * interior vertices so later bending stays smooth. The walls already run along the outline.
+ * Returns positions only; normals are computed after bending.
  */
 export function tessellateCaps(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const flat = g.index ? g.toNonIndexed() : g
-  const [caps, walls] = [0, 1].map((mi) => {
-    const part = new THREE.BufferGeometry()
-    for (const name of ['position', 'normal', 'uv']) {
-      const attr = flat.getAttribute(name) as THREE.BufferAttribute
-      const groups = flat.groups.filter((gr) => gr.materialIndex === mi)
-      const out = new Float32Array(groups.reduce((n, gr) => n + gr.count, 0) * attr.itemSize)
-      let at = 0
-      for (const gr of groups) {
-        const chunk = attr.array.subarray(gr.start * attr.itemSize, (gr.start + gr.count) * attr.itemSize)
-        out.set(chunk, at)
-        at += chunk.length
-      }
-      part.setAttribute(name, new THREE.BufferAttribute(out, attr.itemSize))
+  const pos = flat.getAttribute('position') as THREE.BufferAttribute
+  const take = (mi: number) => {
+    const out: number[] = []
+    for (const gr of flat.groups.filter((x) => x.materialIndex === mi)) {
+      for (let i = gr.start * 3; i < (gr.start + gr.count) * 3; i++) out.push(pos.array[i])
     }
-    return part
-  })
-  const fine = new TessellateModifier(0.18, 6).modify(caps)
-  const merged = mergeGeometries([fine, walls])
-  ;[caps, walls, fine].forEach((x) => x.dispose())
+    return out
+  }
+  const caps = refine(take(0), 0.18, 6)
+  const walls = take(1)
+  const merged = new THREE.BufferGeometry()
+  const all = new Float32Array(caps.length + walls.length)
+  all.set(caps)
+  all.set(walls, caps.length)
+  merged.setAttribute('position', new THREE.BufferAttribute(all, 3))
   if (flat !== g) flat.dispose()
   return merged
+}
+
+/**
+ * Conforming refinement of a triangle soup: every edge longer than maxLen is split at its
+ * midpoint, the same way for both triangles that share it, so bending the result afterwards can
+ * never open cracks along edges (which per-triangle tessellation leaves as T-junctions).
+ */
+function refine(soup: number[], maxLen: number, iterations: number): number[] {
+  // weld the soup into indexed form
+  const verts: number[] = []
+  const ids = new Map<string, number>()
+  let tris: number[] = []
+  for (let i = 0; i < soup.length; i += 3) {
+    const k = `${soup[i].toFixed(6)},${soup[i + 1].toFixed(6)},${soup[i + 2].toFixed(6)}`
+    let id = ids.get(k)
+    if (id === undefined) {
+      id = verts.length / 3
+      ids.set(k, id)
+      verts.push(soup[i], soup[i + 1], soup[i + 2])
+    }
+    tris.push(id)
+  }
+  const len2 = (a: number, b: number) =>
+    (verts[a * 3] - verts[b * 3]) ** 2 + (verts[a * 3 + 1] - verts[b * 3 + 1]) ** 2 + (verts[a * 3 + 2] - verts[b * 3 + 2]) ** 2
+  for (let it = 0; it < iterations; it++) {
+    const mids = new Map<number, number>() // edge (lo * 2^24 + hi) → midpoint vertex
+    const mid = (a: number, b: number) => {
+      if (len2(a, b) <= maxLen * maxLen) return -1
+      const k = a < b ? a * 16777216 + b : b * 16777216 + a
+      let m = mids.get(k)
+      if (m === undefined) {
+        m = verts.length / 3
+        mids.set(k, m)
+        for (let d = 0; d < 3; d++) verts.push((verts[a * 3 + d] + verts[b * 3 + d]) / 2)
+      }
+      return m
+    }
+    // decide every edge first, so shared edges split identically
+    for (let i = 0; i < tris.length; i += 3) {
+      const [a, b, c] = [tris[i], tris[i + 1], tris[i + 2]]
+      mid(a, b)
+      mid(b, c)
+      mid(c, a)
+    }
+    if (mids.size === 0) break
+    const next: number[] = []
+    const get = (a: number, b: number) => mids.get(a < b ? a * 16777216 + b : b * 16777216 + a) ?? -1
+    for (let i = 0; i < tris.length; i += 3) {
+      let [a, b, c] = [tris[i], tris[i + 1], tris[i + 2]]
+      let [ab, bc, ca] = [get(a, b), get(b, c), get(c, a)]
+      const n = +(ab >= 0) + +(bc >= 0) + +(ca >= 0)
+      if (n === 0) next.push(a, b, c)
+      else if (n === 3) next.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca)
+      else {
+        // rotate (keeping winding) until the split pattern starts at edge a–b
+        for (let r = 0; r < 3 && !(ab >= 0 && (n === 1 || bc >= 0)); r++) {
+          ;[a, b, c] = [b, c, a]
+          ;[ab, bc, ca] = [bc, ca, ab]
+        }
+        if (n === 1) next.push(a, ab, c, ab, b, c)
+        else next.push(ab, b, bc, a, ab, bc, a, bc, c)
+      }
+    }
+    tris = next
+  }
+  const out: number[] = []
+  for (const id of tris) out.push(verts[id * 3], verts[id * 3 + 1], verts[id * 3 + 2])
+  return out
 }
 
 /** Outward normal of a CCW outline at point i, from its neighbours. */
@@ -264,4 +327,68 @@ export function ribbon(pts: THREE.Vector3[], normals: THREE.Vector3[], width: nu
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3))
   g.setIndex(idx)
   return g
+}
+
+/**
+ * Smooth vertex normals that keep hard edges sharper than `creaseAngle`. Like three's
+ * toCreasedNormals, but faces count by their area, so the thin sliver triangles along a bent
+ * panel's edges cannot speckle the shading.
+ */
+export function creasedNormals(g: THREE.BufferGeometry, creaseAngle: number): THREE.BufferGeometry {
+  const flat = g.index ? g.toNonIndexed() : g
+  const p = (flat.getAttribute('position') as THREE.BufferAttribute).array
+  const count = p.length / 3
+  // per-triangle normals (stored on the triangle's first vertex): unit, and area-weighted
+  const unit = new Float32Array(count * 3)
+  const area = new Float32Array(count * 3)
+  for (let i = 0; i < count; i += 3) {
+    const [ax, ay, az] = [p[i * 3], p[i * 3 + 1], p[i * 3 + 2]]
+    const [ux, uy, uz] = [p[i * 3 + 3] - ax, p[i * 3 + 4] - ay, p[i * 3 + 5] - az]
+    const [vx, vy, vz] = [p[i * 3 + 6] - ax, p[i * 3 + 7] - ay, p[i * 3 + 8] - az]
+    const nx = uy * vz - uz * vy
+    const ny = uz * vx - ux * vz
+    const nz = ux * vy - uy * vx
+    const l = Math.hypot(nx, ny, nz) || 1
+    area.set([nx, ny, nz], i * 3)
+    unit.set([nx / l, ny / l, nz / l], i * 3)
+  }
+  // weld by position: 0.1 mm grid packed into one exact number (17 bits per axis, ±6.5 m)
+  const q = (v: number) => Math.round(v * 1e4) + 65536
+  const ids = new Int32Array(count)
+  const index = new Map<number, number>()
+  for (let i = 0; i < count; i++) {
+    const k = q(p[i * 3]) + q(p[i * 3 + 1]) * 131072 + q(p[i * 3 + 2]) * 17179869184
+    let id = index.get(k)
+    if (id === undefined) index.set(k, (id = index.size))
+    ids[i] = id
+  }
+  // the triangles touching each welded vertex, as flat lists
+  const start = new Int32Array(index.size + 1)
+  for (let i = 0; i < count; i++) start[ids[i] + 1]++
+  for (let i = 0; i < index.size; i++) start[i + 1] += start[i]
+  const fill = start.slice(0, index.size)
+  const touching = new Int32Array(count)
+  for (let i = 0; i < count; i++) touching[fill[ids[i]]++] = i - (i % 3)
+  const cos = Math.cos(creaseAngle)
+  const normals = new Float32Array(count * 3)
+  for (let i = 0; i < count; i++) {
+    const own = (i - (i % 3)) * 3
+    let [nx, ny, nz] = [0, 0, 0]
+    for (let j = start[ids[i]]; j < start[ids[i] + 1]; j++) {
+      const t = touching[j] * 3
+      if (unit[own] * unit[t] + unit[own + 1] * unit[t + 1] + unit[own + 2] * unit[t + 2] >= cos) {
+        nx += area[t]
+        ny += area[t + 1]
+        nz += area[t + 2]
+      }
+    }
+    const l = Math.hypot(nx, ny, nz)
+    if (l === 0) normals.set([unit[own], unit[own + 1], unit[own + 2]], i * 3)
+    else normals.set([nx / l, ny / l, nz / l], i * 3)
+  }
+  const out = new THREE.BufferGeometry()
+  out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3))
+  out.setAttribute('normal', new THREE.BufferAttribute(normals, 3))
+  if (flat !== g) flat.dispose()
+  return out
 }

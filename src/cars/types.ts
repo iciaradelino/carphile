@@ -34,6 +34,8 @@ export interface Profile {
   tailCurve?: number
   tuck?: number // sides tuck in towards the sills
   hoodDip?: number // how far the bonnet centre sits below raised wings
+  hoodDipRamp?: number // distance from the scuttle over which that dip grows (default 0.35)
+  haunch?: { front?: number; rear?: number } // how much the body swells over each axle
   archScale?: number
 }
 
@@ -47,7 +49,12 @@ export interface Cabin {
   pillar?: number
   aPillar?: number // extra A-pillar width along the windscreen
   cPillar?: number // extra C-pillar width along the rear glass
+  /** a curved back edge for the rearmost side window: x at the top, x at the belt, bulge */
+  quarterEdge?: [number, number, number]
   dividers?: number[] // pillar positions, 0 = windscreen base, 1 = rear glass base
+  dividerLean?: number[] // per divider: x shift per metre of height (negative leans the top back)
+  topF?: number // height of the windscreen header (default: overall height)
+  topR?: number // height where the roof meets the rear glass (default: overall height)
   sideWindow?: [number, number]
   rearGlass?: [number, number]
 }
@@ -70,7 +77,7 @@ export interface Indicators {
 }
 
 export interface Grille {
-  type: 'band' | 'kidney' | 'chrome' | 'shield' | 'slats' | 'none'
+  type: 'band' | 'kidney' | 'chrome' | 'shield' | 'slats' | 'horns' | 'none'
   y: number
   h: number
   w?: number // fraction of body width

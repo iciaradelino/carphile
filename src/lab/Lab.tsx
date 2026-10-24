@@ -116,7 +116,7 @@ function Row({ spec }: { spec: CarSpec }) {
 }
 
 /** One big rear three-quarter render, for checking tails up close (/?lab=<id>&back). */
-function renderBack(spec: CarSpec, w: number, h: number) {
+function renderBack(spec: CarSpec, w: number, h: number, front = false) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
   renderer.setPixelRatio(1)
   renderer.setSize(w, h, false)
@@ -125,8 +125,14 @@ function renderBack(spec: CarSpec, w: number, h: number) {
   stage.scene.add(car)
   const cam = new THREE.PerspectiveCamera(24, w / h, 0.1, 100)
   placeStillCamera(cam, 7)
-  cam.position.set(-cam.position.x, cam.position.y * 0.85, cam.position.z * 0.75)
-  cam.lookAt(TARGET.x - 0.6, TARGET.y, 0)
+  if (front) {
+    // straight on, a little above, as the viewer shows it when turned to face the nose
+    cam.position.set(7.5, 2.4, 0)
+    cam.lookAt(0, TARGET.y, 0)
+  } else {
+    cam.position.set(-cam.position.x, cam.position.y * 0.85, cam.position.z * 0.75)
+    cam.lookAt(TARGET.x - 0.6, TARGET.y, 0)
+  }
   renderer.render(stage.scene, cam)
   const url = renderer.domElement.toDataURL('image/png')
   disposeCar(car)
@@ -135,10 +141,10 @@ function renderBack(spec: CarSpec, w: number, h: number) {
   return url
 }
 
-function Back({ spec }: { spec: CarSpec }) {
+function Back({ spec, front }: { spec: CarSpec; front: boolean }) {
   const [src, setSrc] = useState<string>()
   const refs = useCommons(`${REFS[spec.id]} rear`)
-  useEffect(() => setSrc(renderBack(spec, 1600, 1000)), [spec])
+  useEffect(() => setSrc(renderBack(spec, 1600, 1000, front)), [spec, front])
   return (
     <section style={{ padding: 12 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
@@ -151,11 +157,59 @@ function Back({ spec }: { spec: CarSpec }) {
   )
 }
 
+/**
+ * A side elevation drawn to line up with a reference photo in lab-refs/ (/?lab=<id>&overlay).
+ * The photo's wheel centres and ground line set the scale; heights scale to the car's height.
+ */
+const PHOTO_REFS: Record<string, { file: string; w: number; h: number; front: number; rear: number; ground: number; roof: number; faces: 'left' | 'right' }> = {
+  'porsche-912': { file: 'porsche-912-side.webp', w: 1600, h: 1200, front: 370, rear: 1135, ground: 832, roof: 408, faces: 'left' },
+}
+
+function Overlay({ spec }: { spec: CarSpec }) {
+  const ref = PHOTO_REFS[spec.id]
+  const [src, setSrc] = useState<string>()
+  const [mix, setMix] = useState(0.5)
+  useEffect(() => {
+    if (!ref) return
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true })
+    renderer.setSize(ref.w, ref.h, false)
+    const stage = createStage(renderer)
+    const car = buildCar(spec)
+    stage.scene.add(car)
+    const { L, WB, FO, H } = spec.dims
+    const fAx = L / 2 - FO
+    const sx = (ref.rear - ref.front) / WB // px per metre along the car
+    const sy = (ref.ground - ref.roof) / H // px per metre up
+    const dir = ref.faces === 'left' ? -1 : 1 // nose to the left: look at the car's left side
+    const cx = fAx - dir * (ref.front - ref.w / 2) / sx
+    const cy = (ref.ground - ref.h / 2) / sy
+    const cam = new THREE.OrthographicCamera(-ref.w / 2 / sx, ref.w / 2 / sx, ref.h / 2 / sy, -ref.h / 2 / sy, 0.1, 50)
+    cam.position.set(cx, cy, 10 * dir)
+    cam.lookAt(cx, cy, 0)
+    renderer.render(stage.scene, cam)
+    setSrc(renderer.domElement.toDataURL('image/png'))
+    disposeCar(car)
+    stage.dispose()
+    renderer.dispose()
+  }, [spec, ref])
+  if (!ref) return <p style={{ padding: 16 }}>No reference photo for {spec.id}.</p>
+  return (
+    <section style={{ padding: 12 }}>
+      <input type="range" min={0} max={1} step={0.01} value={mix} onChange={(e) => setMix(+e.target.value)} style={{ width: 300 }} />
+      <div style={{ position: 'relative', width: '100%', aspectRatio: `${ref.w} / ${ref.h}` }}>
+        <img src={`/lab-refs/${ref.file}`} style={{ position: 'absolute', inset: 0, width: '100%' }} />
+        {src && <img src={src} style={{ position: 'absolute', inset: 0, width: '100%', opacity: mix }} />}
+      </div>
+    </section>
+  )
+}
+
 export function Lab() {
   const params = new URLSearchParams(location.search)
   const only = params.get('lab')
   const cars = only ? catalog.filter((c) => c.id === only) : catalog
-  if (params.has('back') && cars[0]) return <Back spec={cars[0]} />
+  if (params.has('overlay') && cars[0]) return <Overlay spec={cars[0]} />
+  if ((params.has('back') || params.has('front')) && cars[0]) return <Back spec={cars[0]} front={params.has('front')} />
   return (
     <div style={{ height: '100%', overflow: 'auto', background: '#f4f3ef' }}>
       {cars.map((c) => (

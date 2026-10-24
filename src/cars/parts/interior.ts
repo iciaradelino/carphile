@@ -40,8 +40,11 @@ export function addInterior(c: Ctx) {
   const dashFront = c.cowlX - (c.cowlX - c.roofF) * (dashH / room) * 1.25 - 0.03
   const dashD = 0.26
   put(box(dashD, dashH, cabinW - 0.16, 0.03), m.dash, dashFront - dashD / 2, belt + dashH / 2, 0)
-  // the dash top runs forward to meet the base of the windscreen
-  put(new THREE.BoxGeometry(c.cowlX + 0.02 - dashFront, 0.03, cabinW - 0.12), m.dash, (c.cowlX + 0.02 + dashFront) / 2, belt + 0.012, 0)
+  // the dash top runs forward under the windscreen, stopping where the glass gets too low
+  const trayFront = c.cowlX - 0.09
+  if (trayFront > dashFront) {
+    put(new THREE.BoxGeometry(trayFront - dashFront, 0.02, cabinW - 0.14), m.dash, (trayFront + dashFront) / 2, belt + 0.008, 0)
+  }
   const driverZ = (it.rhd ? 1 : -1) * cabinW * 0.22
   const wheelX = dashFront - dashD - 0.06
   const wheel = new THREE.TorusGeometry(0.15, 0.013, 8, 32).rotateY(Math.PI / 2).rotateZ(0.45)
@@ -50,7 +53,9 @@ export function addInterior(c: Ctx) {
   put(column, m.dash, wheelX + 0.09, belt + room * 0.32, driverZ)
 
   // seats: the front pair just ahead of the B-pillar, and a bench at the back if there is room
-  const bX = spec.cabin.dividers?.length ? c.xAt(spec.cabin.dividers[0]) : (c.roofF + c.roofR) / 2
+  // the B-pillar: the front door's rear shut line (a quarter-vent divider may come before it)
+  const bF = spec.side?.seams?.[1] ?? spec.cabin.dividers?.[spec.cabin.dividers.length > 1 && spec.cabin.dividers[0] < 0.15 ? 1 : 0]
+  const bX = bF !== undefined ? c.xAt(bF) : (c.roofF + c.roofR) / 2
   const seatH = room * 0.62
   const seat = (x: number, z: number, w: number, h = seatH) => {
     put(box(0.42, 0.09, w), m.seat, x + 0.22, belt + 0.05, z)

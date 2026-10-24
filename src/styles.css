@@ -527,6 +527,39 @@ figcaption {
   font-family: var(--mono);
 }
 
+.viewer-views {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--line);
+  backdrop-filter: blur(6px);
+}
+
+.viewer-views button {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  transition: background 0.2s, color 0.2s;
+}
+
+.viewer-views button:hover {
+  color: var(--ink);
+}
+
+.viewer-views button.is-active {
+  background: var(--ink);
+  color: var(--bg);
+}
+
 .viewer-nav {
   position: absolute;
   right: 28px;
@@ -572,6 +605,9 @@ figcaption {
   }
   .info-note {
     display: none;
+  }
+  .viewer-views {
+    bottom: 64px;
   }
   .viewer-nav {
     left: 16px;
