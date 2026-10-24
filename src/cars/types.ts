@@ -84,6 +84,7 @@ export interface Bumper {
   span?: number // fraction of half width the bumper reaches
   strip?: boolean // black rubber insert along a chrome bumper
   overriders?: number[] // vertical guards, as fractions of half width
+  gap?: number // split into two bumpers with this gap in the middle
 }
 
 export type LampColor = 'red' | 'amber' | 'clear' | 'dark'
@@ -118,7 +119,7 @@ export interface Rear {
   lid?: { type: 'trunk' | 'hatch' | 'engine'; bottom: number; width?: number }
   /** a panel between the lamps, e.g. the black tail panel of many 80s cars */
   panel?: { y: number; h: number; color: 'black' | 'body' | 'chrome' }
-  plate?: { y: number; text: string; style?: 'eu' | 'de' | 'uk' | 'us' | 'it' | 'jp' }
+  plate?: { y: number; text: string; style?: 'eu' | 'de' | 'uk' | 'us' | 'it' | 'jp'; onBumper?: boolean }
   exhaust?: { z: number; count?: 1 | 2; r?: number; style?: 'chrome' | 'dark' }
   badges?: Badge[]
   wiper?: boolean

@@ -52,7 +52,9 @@ export function addRear(c: Ctx) {
   }
 
   if (tl.type === 'band') {
+    // the lamps are joined by a dark red reflector strip
     face(new THREE.BoxGeometry(0.03, tl.h + 0.03, W * 0.9, 1, 1, 16), m.trim, tl.y, 0, 0.002)
+    face(new THREE.BoxGeometry(0.03, tl.h * 0.7, W * 0.9 - 2 * tl.w - 0.1, 1, 1, 12), m.reflector, tl.y, 0, 0.006)
     for (const s of sides) lamp(tl.w, tl.h, s * (hw * 0.9 - tl.w / 2 - 0.02), s)
   } else {
     for (const sp of tl.spread ?? [0.6]) {
@@ -73,11 +75,14 @@ export function addRear(c: Ctx) {
   // --- number plate in a dark recess ----------------------------------------
   if (r.plate) {
     const size = plateSize(r.plate.style)
-    face(new THREE.BoxGeometry(0.02, size.h + 0.03, size.w + 0.03, 1, 1, 8), m.trim, r.plate.y, 0, 0.0)
+    // a bumper-mounted plate sits out on the bumper's face instead of on the tail
+    const b = r.bumper
+    const base = r.plate.onBumper ? (b.d ?? (b.style === 'chrome' ? 0.07 : 0.12)) - 0.03 : 0
+    face(new THREE.BoxGeometry(0.02, size.h + 0.03, size.w + 0.03, 1, 1, 8), m.trim, r.plate.y, 0, base)
     const tex = plateTexture(r.plate.text, r.plate.style)
     tex.userData.owned = true
     const plate = new THREE.PlaneGeometry(size.w, size.h, 8, 1).rotateY(-Math.PI / 2)
-    c.add(c.shaped(c.onFace(plate, false, r.plate.y, 0, 0.012)), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45 }), false)
+    c.add(c.shaped(c.onFace(plate, false, r.plate.y, 0, base + 0.012)), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45 }), false)
   }
 
   // --- badges -----------------------------------------------------------------
@@ -91,14 +96,17 @@ export function addRear(c: Ctx) {
   if (r.exhaust) {
     const rad = r.exhaust.r ?? 0.03
     const zs = r.exhaust.count === 2 ? [r.exhaust.z - 0.09, r.exhaust.z + 0.09] : [r.exhaust.z]
+    // The tip peeks just past the tail at bumper height, so a tapering tail (a boat tail, a
+    // Kamm tail tucked in at the bottom) does not leave the pipe hanging out in the air.
+    const pipeY = c.clearance + 0.035
+    const tailAt = rearmost(c.body, pipeY + 0.15)
     for (const zf of zs) {
       const z = zf * hw
-      // the tip peeks just past the tail; the rest of the pipe runs back under the car
-      const tip = -c.hl - 0.025
+      const tip = tailAt - 0.025
       const len = 0.3
-      const pipe = new THREE.CylinderGeometry(rad, rad, len, 20, 1, true).rotateZ(Math.PI / 2).translate(tip + len / 2, c.clearance + 0.035, z)
+      const pipe = new THREE.CylinderGeometry(rad, rad, len, 20, 1, true).rotateZ(Math.PI / 2).translate(tip + len / 2, pipeY, z)
       c.add(c.shaped(pipe), r.exhaust.style === 'dark' ? m.trim : m.chrome)
-      const bore = new THREE.CircleGeometry(rad * 0.82, 20).rotateY(-Math.PI / 2).translate(tip + 0.004, c.clearance + 0.035, z)
+      const bore = new THREE.CircleGeometry(rad * 0.82, 20).rotateY(-Math.PI / 2).translate(tip + 0.004, pipeY, z)
       c.add(c.shaped(bore), m.well, false)
     }
   }
@@ -123,6 +131,17 @@ export function addRear(c: Ctx) {
     c.add(c.shaped(ribbon(pts, pts.map(() => out), 0.016, 0.014), true), m.blackTrim, false)
     c.add(c.shaped(new THREE.CylinderGeometry(0.02, 0.02, 0.03, 12).rotateZ(Math.PI / 2).translate(p[0] - 0.01, p[1] + 0.01, 0), true), m.trim)
   }
+}
+
+/** The rearmost point of an outline at height y. */
+function rearmost(pts: [number, number][], y: number): number {
+  let x = Infinity
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i]
+    const b = pts[(i + 1) % pts.length]
+    if ((y - a[1]) * (y - b[1]) <= 0 && a[1] !== b[1]) x = Math.min(x, a[0] + ((y - a[1]) / (b[1] - a[1])) * (b[0] - a[0]))
+  }
+  return x
 }
 
 /** Engraved outline of the boot lid (wrapping from the deck down the tail) or the hatch. */

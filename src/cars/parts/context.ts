@@ -43,6 +43,7 @@ export function materials(spec: CarSpec) {
     amber: new THREE.MeshPhysicalMaterial({ color: '#e48a1c', roughness: 0.15, clearcoat: 1, emissive: '#7a3a00', emissiveIntensity: 0.3 }),
     clear: new THREE.MeshPhysicalMaterial({ color: '#e7e5df', roughness: 0.1, clearcoat: 1, metalness: 0.1 }),
     lampDark: new THREE.MeshPhysicalMaterial({ color: '#2a1416', roughness: 0.2, clearcoat: 1 }),
+    reflector: new THREE.MeshPhysicalMaterial({ color: '#7a0d14', roughness: 0.18, clearcoat: 1, emissive: '#3a0005', emissiveIntensity: 0.3 }),
     tyre: new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.85 }),
     well: new THREE.MeshStandardMaterial({ color: '#111111', roughness: 1 }),
     rim: new THREE.MeshStandardMaterial({ color: spec.wheels.rim ?? '#cfd1d3', metalness: 0.7, roughness: 0.3 }),

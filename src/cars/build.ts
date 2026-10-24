@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import {
   type P, Path, clamp01, clip, clipX, extrudeZ, inset, inwardNormal, roundedRect, sampleSeg, soften, strip,
@@ -351,17 +352,23 @@ export function buildCar(spec: CarSpec): THREE.Group {
     const wrap = (p: THREE.Vector3) => {
       p.x -= (front ? 1 : -1) * 0.24 * Math.abs(p.z / span) ** 6
     }
-    add(shaped(extrudeZ(roundedRect(x, b.y, d, b.h, Math.min(d, b.h) * 0.45), -span, span, 0.02, 40), false, wrap), trimMat(m, b.style))
-    // a rubber insert along the bumper's face
-    if (b.strip) {
-      const sh = b.h * 0.38
-      const sx = x + (front ? 1 : -1) * 0.004
-      add(shaped(extrudeZ(roundedRect(sx, b.y, d, sh, sh * 0.45), -span * 0.97, span * 0.97, 0.01, 40), false, wrap), m.rubber)
+    // one piece, or two with a gap in the middle (the 240Z's plate sits between its bumpers)
+    const g = (b.gap ?? 0) / 2
+    const pieces: [number, number][] = g > 0 ? [[-span, -g], [g, span]] : [[-span, span]]
+    for (const [z0, z1] of pieces) {
+      add(shaped(extrudeZ(roundedRect(x, b.y, d, b.h, Math.min(d, b.h) * 0.45), z0, z1, 0.02, 40), false, wrap), trimMat(m, b.style))
+      // a rubber insert along the bumper's face
+      if (b.strip) {
+        const sh = b.h * 0.38
+        const sx = x + (front ? 1 : -1) * 0.004
+        add(shaped(extrudeZ(roundedRect(sx, b.y, d, sh, sh * 0.45), z0 * 0.97, z1 * 0.97, 0.01, 40), false, wrap), m.rubber)
+      }
     }
+    // guards: chrome on a chrome bumper, rubber on the rest
     for (const o of b.overriders ?? []) {
       for (const s of sides) {
-        const g = new THREE.BoxGeometry(0.06, b.h * 2.1, 0.06, 1, 2, 1)
-        add(shaped(onFace(g, front, b.y + b.h * 0.3, s * o * hw, d - 0.02)), m.rubber)
+        const guard = new RoundedBoxGeometry(0.055, b.h * 2.2, 0.06, 2, 0.02)
+        add(shaped(onFace(guard, front, b.y + b.h * 0.3, s * o * hw, d - 0.02)), b.style === 'chrome' ? m.chrome : m.rubber)
       }
     }
   }

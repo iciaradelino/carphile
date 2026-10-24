@@ -2,7 +2,7 @@ import type { CarSpec } from '../cars/types'
 import { drawStills } from './draw'
 
 // Bump when the builder or studio changes in a way that should re-render every still.
-const RENDER_VERSION = 4
+const RENDER_VERSION = 5
 const CACHE_NAME = 'carphile-stills'
 
 /** FNV-1a, enough to notice a spec edit. */

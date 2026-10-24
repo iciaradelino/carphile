@@ -39,14 +39,14 @@ export function letteringTexture(text: string, font: Badge['font'] = 'sans') {
   return out
 }
 
-const BADGE_COLOR = { chrome: '#e6e6e6', black: '#151515', red: '#b8141c' }
+const BADGE_COLOR = { chrome: '#f4f4f4', black: '#151515', red: '#b8141c' }
 
 export function badgeMaterial(style: Badge['style'] = 'chrome', tex: THREE.Texture) {
   return new THREE.MeshStandardMaterial({
     map: tex,
     color: BADGE_COLOR[style],
-    metalness: style === 'chrome' ? 1 : 0.1,
-    roughness: style === 'chrome' ? 0.18 : 0.4,
+    metalness: style === 'chrome' ? 0.75 : 0.1,
+    roughness: style === 'chrome' ? 0.12 : 0.4,
     transparent: true,
     alphaTest: 0.35,
     polygonOffset: true,
