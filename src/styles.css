@@ -606,8 +606,12 @@ figcaption {
   .info-note {
     display: none;
   }
+  /* up top on phones, clear of the specs; left-aligned so it never meets the close button */
   .viewer-views {
-    bottom: 64px;
+    top: 20px;
+    bottom: auto;
+    left: 16px;
+    transform: none;
   }
   .viewer-nav {
     left: 16px;
