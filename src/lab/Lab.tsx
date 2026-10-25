@@ -12,7 +12,6 @@ import { TARGET, createStage, placeStillCamera } from '../render/stage'
 const REFS: Record<string, string> = {
   'bmw-e30': 'BMW E30 coupe',
   'seat-toledo': 'SEAT Toledo 1L',
-  'porsche-912': 'Porsche 912 coupe',
   'vw-golf-1': 'Volkswagen Golf I 3-door',
   'mercedes-190e': 'Mercedes-Benz W201 190E',
   'volvo-240': 'Volvo 240 sedan',
@@ -162,7 +161,6 @@ function Back({ spec, front }: { spec: CarSpec; front: boolean }) {
  * The photo's wheel centres and ground line set the scale; heights scale to the car's height.
  */
 const PHOTO_REFS: Record<string, { file: string; w: number; h: number; front: number; rear: number; ground: number; roof: number; faces: 'left' | 'right' }> = {
-  'porsche-912': { file: 'porsche-912-side.webp', w: 1600, h: 1200, front: 370, rear: 1135, ground: 832, roof: 408, faces: 'left' },
 }
 
 function Overlay({ spec }: { spec: CarSpec }) {
